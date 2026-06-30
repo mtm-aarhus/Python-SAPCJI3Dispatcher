@@ -1,7 +1,5 @@
 """This module contains the main process of the robot."""
 
-from __future__ import annotations
-
 from OpenOrchestrator.orchestrator_connection.connection import OrchestratorConnection
 from OpenOrchestrator.database.queues import QueueElement
 
@@ -29,10 +27,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
     # Print params
     plist = "ROBOT"
-    prtxt = build_prtxt(date.today())  # matches your example: uses "today" date for the label
-
-    # Optional: if you REALLY want UUID too:
-    prtxt = f"{build_prtxt(date.today())}_{uuid.uuid4().hex[:8]}"
+    prtxt = f"{build_prtxt(high)}_{uuid.uuid4().hex[:8]}"
 
     orchestrator_connection.log_trace(f"Using date range {date_low} - {date_high} and prtxt={prtxt}")
     wait_ready(session)
@@ -41,37 +36,16 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     session.findById("wnd[0]").maximize()
     session.findById("wnd[0]/tbar[0]/okcd").text = "CJI3"
     session.findById("wnd[0]").sendVKey(0)
-
     session.findById("wnd[0]/tbar[1]/btn[17]").press()
-
-    session.findById("wnd[1]/usr/txtENAME-LOW").setFocus()
-    session.findById("wnd[1]/usr/txtENAME-LOW").caretPosition = 4
-    session.findById("wnd[1]").sendVKey(2)
-
-    session.findById("wnd[2]").close()
-
-    session.findById("wnd[1]/usr/txtV-LOW").text = ""
     session.findById("wnd[1]/usr/txtENAME-LOW").text = ""
-    session.findById("wnd[1]/usr/txtV-LOW").setFocus()
-    session.findById("wnd[1]/usr/txtV-LOW").caretPosition = 0
-
+    session.findById("wnd[1]/usr/txtV-LOW").text = "FULDT UDTRÆK"
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
 
-    alv = session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell")
-    alv.currentCellRow = 72
-    alv.firstVisibleRow = 60
-    alv.selectedRows = "72"
-    alv.doubleClickCurrentCell()
 
     session.findById("wnd[0]").sendVKey(21)
-    session.findById("wnd[0]/usr/ctxt%%DYN002-HIGH").setFocus()
-    session.findById("wnd[0]/usr/ctxt%%DYN002-HIGH").caretPosition = 3
-    session.findById("wnd[0]").sendVKey(2)
-    session.findById("wnd[1]").close()
 
     session.findById("wnd[0]/usr/ctxt%%DYN002-LOW").text = date_low
     session.findById("wnd[0]/usr/ctxt%%DYN002-HIGH").text = date_high
-    session.findById("wnd[0]/usr/ctxt%%DYN002-HIGH").caretPosition = len(date_high)
 
     session.findById("wnd[0]/tbar[0]/btn[11]").press()
 
@@ -79,10 +53,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
     session.findById("wnd[1]/usr/subSUBSCREEN:SAPLSPRI:0600/txtPRI_PARAMS-PLIST").text = plist
     session.findById("wnd[1]/usr/subSUBSCREEN:SAPLSPRI:0600/txtPRI_PARAMS-PRTXT").text = prtxt
-    session.findById("wnd[1]/usr/subSUBSCREEN:SAPLSPRI:0600/txtPRI_PARAMS-PRTXT").setFocus()
-    session.findById("wnd[1]/usr/subSUBSCREEN:SAPLSPRI:0600/txtPRI_PARAMS-PRTXT").caretPosition = len(prtxt)
-
     session.findById("wnd[1]/tbar[0]/btn[13]").press()
+
     session.findById("wnd[1]/usr/btnSOFORT_PUSH").press()
 
     session.findById("wnd[1]/tbar[0]/btn[11]").press()

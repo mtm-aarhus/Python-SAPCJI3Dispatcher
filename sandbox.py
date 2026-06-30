@@ -13,9 +13,9 @@ orchestrator_connection = OrchestratorConnection(
     os.getenv("OpenOrchestratorSQL"),
     os.getenv("OpenOrchestratorKey"),
     None,
+    None,
     None
 )
 
 reset.reset(orchestrator_connection)
-
 process(orchestrator_connection)
