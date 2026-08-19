@@ -156,17 +156,26 @@ def submit_cji3_extract(session, date_low: str, date_high: str, prtxt: str, plis
 
 def read_dyn_field_label(session, field_id: str) -> str:
     """
-    Read the on-screen label sitting immediately left of a dynamic selection field.
+    Read the on-screen label belonging to a dynamic selection field.
 
-    Labels are matched by screen position rather than by control id, because the
-    dynamic selections area gives its fields positional ids (%%DYN001, %%DYN002, ...)
-    and no usable link to their labels. The label on the same row, nearest to the left
-    of the field, is the field's description.
+    SAP gives the label its own control with an id derived from the field's, so
+    %%DYN002 is described by txt%_%%DYN002_%_APP_%-TEXT. Reading that directly is far
+    more reliable than hunting by screen geometry.
 
-    Returns an empty string if no label can be found - the caller decides whether that
-    is fatal. Falls back to the field's tooltip, which usually carries the description
-    when the label itself is not a separate control.
+    Position matching is kept only as a fallback, and it accepts GuiTextField as well
+    as GuiLabel: on this screen the labels are GuiTextField controls, which is why an
+    earlier version that only looked at GuiLabel found nothing at all.
+
+    Returns an empty string if no label can be found; the caller decides whether that
+    is fatal.
     """
+    try:
+        text = session.findById(f"wnd[0]/usr/txt%_{field_id}_%_APP_%-TEXT").Text
+        if text and text.strip():
+            return text.strip()
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass  # Fall through to the positional search below.
+
     field = session.findById(f"wnd[0]/usr/ctxt{field_id}-LOW")
     usr = session.findById("wnd[0]/usr")
 
@@ -176,7 +185,7 @@ def read_dyn_field_label(session, field_id: str) -> str:
     for index in range(usr.Children.Count):
         control = usr.Children(index)
         try:
-            if control.Type != "GuiLabel":
+            if control.Type not in ("GuiLabel", "GuiTextField"):
                 continue
             if control.Top != field.Top or control.Left >= field.Left:
                 continue
@@ -186,12 +195,6 @@ def read_dyn_field_label(session, field_id: str) -> str:
         except Exception:  # pylint: disable=broad-exception-caught
             # SAP GUI scripting raises COM errors for properties a control lacks.
             continue
-
-    if not best_text:
-        try:
-            best_text = (field.Tooltip or "").strip()
-        except Exception:  # pylint: disable=broad-exception-caught
-            best_text = ""
 
     return best_text
 

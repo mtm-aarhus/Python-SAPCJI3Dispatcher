@@ -46,14 +46,18 @@ DAGE_PR_VINDUE = 7
 # order they appear, so this says nothing about which CJI3 date it actually is.
 DYN_DATE_FIELD = "%%DYN002"
 
-# The label expected next to that field. It is read back before the dates are typed.
+# The label expected next to that field. It is read back before the dates are typed,
+# and a mismatch fails the run.
 #
-# Leave this empty for the first run: the robot logs whichever label it finds, so the
-# OpenOrchestrator log tells you which date CJI3 is really filtering on. Fill it in
-# afterwards - from then on, any change to the FULDT UDTRAEK variant that shifts the
-# field order becomes a failed run instead of a silently wrong extract, which is the
-# one failure mode none of the monitoring views can catch.
-DYN_DATE_LABEL = ""
+# Confirmed by sandbox_layout.py: %%DYN002 is 'Registreringsdato' - the ENTRY date,
+# not the posting date. That is the safer field to extract on, because a document is
+# caught by the window covering the day it was entered whatever period it posts to, so
+# a late posting into an old period still arrives. It also means date windows do not
+# line up with Bogfoeringsdato: completeness must be judged on Registreringsdato.
+#
+# %%DYN001 is 'Kapitalmidler' and there is no %%DYN003, so the variant has exactly two
+# dynamic selections. If someone adds one, the numbering shifts and this guard fires.
+DYN_DATE_LABEL = "Registreringsdato"
 
 # How far back to re-extract every day. This is the "kor en uge bagud hver eneste
 # dag" rule: it re-runs the last week so postings that were missing during an
