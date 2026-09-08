@@ -41,7 +41,7 @@ MAX_TASK_COUNT = 100
 # means ten spool jobs in SAP before a single row is known to have landed, and it is the
 # quickest way to hit the spool-overview paging limit. Raise it to 10 once the load log
 # shows a clean window.
-WINDOWS_PER_RUN = 1
+WINDOWS_PER_RUN = 3
 
 # Days per window. Capped at 7 by CK_CJI3_Udtraek_MaksEnUge in the database.
 DAGE_PR_VINDUE = 7
