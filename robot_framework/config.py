@@ -33,15 +33,21 @@ MAX_TASK_COUNT = 100
 # ----------------------
 
 # How many windows to dispatch per run. Each one becomes a CJI3 run, a spool job and a
-# queue element, so this is what decides how fast the historic backfill catches up: at
-# 10 a night the backfill from 2025 is done in about 9 nights. Once caught up there are
-# only ever a couple of windows waiting per day.
+# queue element. Paired with the trigger's cron ("0 22-23,0-4 * * *", 7 runs a night)
+# this is what sets the backfill pace: 3 x 7 = 21 windows a night.
 #
-# Deliberately 1 until one window has gone end to end. Ten windows on the first run
-# means ten spool jobs in SAP before a single row is known to have landed, and it is the
-# quickest way to hit the spool-overview paging limit. Raise it to 10 once the load log
-# shows a clean window.
-WINDOWS_PER_RUN = 3
+# 3 rather than 10, because SAP may generate the spool jobs serially and nothing here
+# controls that. Measured timings per window: ~24s to submit, 375-533s for SAP to
+# generate the spool, ~90s for the performer. Worst case with 3 - fully serialised -
+# the last spool is ready around minute 21, the performer reaches it around minute 16
+# and waits ~5, well inside SPOOL_TIMEOUT_S of 30 minutes, and the whole cycle is done
+# by minute 23 with over half an hour of slack before the next run. At 10 the last spool
+# would not be ready until roughly minute 70, past the performer's timeout, and those
+# windows would fail and be re-dispatched the following night.
+#
+# Once the backfill is done there are only ever a couple of windows waiting per day, and
+# a run with nothing pending exits in about two seconds without touching SAP.
+WINDOWS_PER_RUN = 1
 
 # Days per window. Capped at 7 by CK_CJI3_Udtraek_MaksEnUge in the database.
 DAGE_PR_VINDUE = 7
