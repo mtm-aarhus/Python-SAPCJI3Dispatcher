@@ -24,6 +24,14 @@ dependencies = [
     "pyodbc == 5.*"
 ]
 
+# Without this, setuptools uses flat-layout auto-discovery and treats EVERY top-level
+# directory as a candidate package, then refuses to build if it finds more than one.
+# That breaks `uv run python -m robot_framework` - the robot itself, not just tooling -
+# the moment a second directory appears next to robot_framework. Naming the package
+# removes the guesswork. (It happened in the performer repo when sql/ was added.)
+[tool.setuptools]
+packages = ["robot_framework"]
+
 [project.optional-dependencies]
 dev = [
   "pylint",
