@@ -22,29 +22,32 @@ VARIANT_NAME = "FULDT UDTRÆK"
 # pylint: disable-next=unused-argument
 def process(orchestrator_connection: OrchestratorConnection, queue_element: QueueElement | None = None) -> None:
     """
-    Dispatch the oldest pending extraction windows.
+    Dispatch this run's extraction ranges.
 
-    The date range is no longer computed here - it comes from the work list in
-    dbo.CJI3_Udtraek, which is what makes the historic backfill resumable
-    across runs and keeps track of what has and has not been loaded.
+    The ranges are not computed here. dbo.usp_CJI3_PlanlaegUdtraek returns the
+    rolling "one week back" range - always - plus any repair chunks for days that
+    have never been loaded, and records each of them in the dispatch log before the
+    robot touches SAP.
     """
     orchestrator_connection.log_trace("Running process.")
 
     conn = udtraek.connect(orchestrator_connection)
     try:
-        summary = udtraek.opdater_vindueliste(conn)
-        orchestrator_connection.log_trace(
-            "Work list updated: " + ", ".join(f"{key}={value}" for key, value in summary.items())
-        )
-
-        windows = udtraek.reserver_udtraek(conn, config.WINDOWS_PER_RUN)
+        windows = udtraek.planlaeg_udtraek(conn)
         if not windows:
-            orchestrator_connection.log_info("No windows waiting to be extracted. Nothing to do.")
-            return
+            # The rolling range is unconditional, so an empty plan is a fault, not
+            # an idle run. Raising beats returning quietly: a silent no-op every
+            # night is exactly how the previous model hid the fact that it had
+            # stopped extracting the current week.
+            raise RuntimeError(
+                "usp_CJI3_PlanlaegUdtraek returned no ranges. It always returns the "
+                "rolling daily range, so this means the procedure is not the version "
+                "this robot expects, or it failed silently."
+            )
 
-        orchestrator_connection.log_trace(
-            f"Reserved {len(windows)} window(s): "
-            + ", ".join(f"{w['DatoFraSAP']}-{w['DatoTilSAP']}" for w in windows)
+        orchestrator_connection.log_info(
+            f"Planlagt {len(windows)} udtraek: "
+            + ", ".join(f"{w['Slags']} {w['DatoFraSAP']}-{w['DatoTilSAP']}" for w in windows)
         )
 
         session = get_sap_session(connection_index=0, session_index=0)
@@ -58,9 +61,10 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
                 label = submit_cji3_extract(session, window, prtxt)
                 if dispatched == 0:
-                    # Logged once per run. With config.DYN_DATE_LABEL still empty this
-                    # is how you find out which CJI3 date the extract is filtered on.
-                    orchestrator_connection.log_info(
+                    # Logged once per run, so the OO log records which CJI3 date the
+                    # extract was actually filtered on rather than only which %%DYNnnn
+                    # position was written to.
+                    orchestrator_connection.log_trace(
                         f"Dynamic selection field {config.DYN_DATE_FIELD} is labelled "
                         f"'{label}'. The date range is filtered on that field."
                     )
@@ -79,18 +83,19 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
                 dispatched += 1
                 orchestrator_connection.log_trace(
-                    f"Dispatched window {window['UdtraekId']} "
-                    f"({window['DatoFraSAP']} - {window['DatoTilSAP']}) as {prtxt}."
+                    f"Dispatched udtraek {window['UdtraekId']} ({window['Slags']}, "
+                    f"{window['DatoFraSAP']} - {window['DatoTilSAP']}) as {prtxt}."
                 )
         except Exception:
-            # Hand back everything that never reached the queue, so the next run
-            # retries it instead of it sitting IGang until the stale sweep.
+            # Close everything that never reached the queue, so its days stop
+            # counting as in flight and the next run can plan them again straight
+            # away instead of waiting out @StaleMinutter.
             for window in windows[dispatched:]:
                 udtraek.afslut_udtraek(
                     conn,
                     window["UdtraekId"],
-                    "Afventer",
-                    f"Dispatcher afbrudt efter {dispatched} af {len(windows)} vinduer.",
+                    "Fejlet",
+                    f"Dispatcher afbrudt efter {dispatched} af {len(windows)} udtraek.",
                 )
             raise
     finally:
@@ -124,7 +129,7 @@ def submit_cji3_extract(session, window: dict, prtxt: str, plist: str = "ROBOT")
     Returns the label found next to the dynamic-selection date field, so the caller can
     log which CJI3 date the extract is actually filtered on.
 
-    window is a row from usp_CJI3_ReserverUdtraek: DatoFraSAP/DatoTilSAP are already
+    window is a row from usp_CJI3_PlanlaegUdtraek: DatoFraSAP/DatoTilSAP are already
     dd.mm.yyyy for typing, DatoFra/DatoTil are dates for the Bogfoeringsdato arithmetic.
 
     This is the recorded click sequence, with two fields set per window: the entry-date
@@ -182,6 +187,8 @@ def submit_cji3_extract(session, window: dict, prtxt: str, plist: str = "ROBOT")
     session.findById("wnd[1]/tbar[0]/btn[11]").press()
     session.findById("wnd[0]/tbar[0]/btn[15]").press()          # Afslut, back to main screen
     wait_ready(session)
+
+    return label
 
 
 

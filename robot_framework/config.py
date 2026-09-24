@@ -29,28 +29,33 @@ MAX_TASK_COUNT = 100
 # ----------------------
 
 
-# Extraction windows
+# Extraction ranges
 # ----------------------
 
-# How many windows to dispatch per run. Each one becomes a CJI3 run, a spool job and a
-# queue element. Paired with the trigger's cron ("0 22-23,0-4 * * *", 7 runs a night)
-# this is what sets the backfill pace: 3 x 7 = 21 windows a night.
+# How many REPAIR chunks to dispatch per run, on top of the rolling daily range, which
+# always goes out. Total CJI3 runs per dispatcher run is therefore this plus one.
 #
-# 3 rather than 10, because SAP may generate the spool jobs serially and nothing here
-# controls that. Measured timings per window: ~24s to submit, 375-533s for SAP to
-# generate the spool, ~90s for the performer. Worst case with 3 - fully serialised -
-# the last spool is ready around minute 21, the performer reaches it around minute 16
-# and waits ~5, well inside SPOOL_TIMEOUT_S of 30 minutes, and the whole cycle is done
-# by minute 23 with over half an hour of slack before the next run. At 10 the last spool
-# would not be ready until roughly minute 70, past the performer's timeout, and those
-# windows would fail and be re-dispatched the following night.
+# 2 (so three extracts a run) because SAP may generate the spool jobs serially and
+# nothing here controls that. Measured timings per range: ~24s to submit, 375-533s for
+# SAP to generate the spool, ~90s for the performer. Worst case with three - fully
+# serialised - the last spool is ready around minute 21, the performer reaches it around
+# minute 16 and waits ~5, well inside SPOOL_TIMEOUT_S of 30 minutes, and the whole cycle
+# is done by minute 23 with over half an hour of slack before the next run. At 10 the
+# last spool would not be ready until roughly minute 70, past the performer's timeout.
 #
-# Once the backfill is done there are only ever a couple of windows waiting per day, and
-# a run with nothing pending exits in about two seconds without touching SAP.
-WINDOWS_PER_RUN = 1
+# Paired with the trigger's cron ("0 22-23,0-4 * * *", 7 runs a night) this sets the
+# catch-up pace: 14 chunks a night, so up to 98 days of hole repaired per night. Once
+# there are no holes left the repair half returns nothing and a run is a single extract.
+#
+# Do not set this to 0. The rolling range would still run, so the figures would look
+# current, but a day that was ever missed would never be repaired - which is precisely
+# the failure the old model had.
+REPARATIONER_PR_KOERSEL = 2
 
-# Days per window. Capped at 7 by CK_CJI3_Udtraek_MaksEnUge in the database.
-DAGE_PR_VINDUE = 7
+# Days per extract, and the cap on a repair chunk. Capped at 7 by
+# CK_CJI3_Udtraek_MaksEnUge in the database, and by the 0-6 tally the merge uses to
+# expand a range into days. Raising it means changing both.
+MAKS_DAGE_PR_KOERSEL = 7
 
 # The dynamic selection field the date range is typed into. %%DYN002 is a position,
 # not a field name: SAP numbers the fields in the dynamic selections area by the
@@ -99,9 +104,22 @@ BUDAT_LABEL = "Bogføringsdato"
 # dynamic selections. If someone adds one, the numbering shifts and this guard fires.
 DYN_DATE_LABEL = "Registreringsdato"
 
-# How far back to re-extract every day. This is the "kor en uge bagud hver eneste
-# dag" rule: it re-runs the last week so postings that were missing during an
-# udfald a day or two ago still get picked up.
+# Length of the rolling range that goes out on EVERY run: today-6 .. today.
+#
+# This is the "kor en uge bagud hver eneste dag" rule, and it means a rolling range
+# recomputed from the current date - not a re-run of some stored week. An earlier
+# version read it the second way, tiled the timeline into fixed 7-day windows and
+# re-opened the window rows overlapping the last week. Those re-opened rows always
+# sorted ahead of the current one, so the current week went six days without ever
+# being extracted. Coverage is tracked per day now (dbo.CJI3_Dagdaekning) and the
+# planner returns the rolling range and the repair chunks from the same call, so
+# neither can starve the other.
+#
+# It ends at TODAY, not yesterday. Oekonomi holds these figures up against the OPUS
+# reports the organisation uses day to day, so the top-line totals have to match what
+# OPUS shows now. Including a day that is not over is safe because the range is not a
+# commitment: today is re-extracted on every run for the next seven days, so the
+# figures are complete as of the most recent run rather than as of the last whole day.
 #
 # It is also why nothing needs to periodically re-read closed periods, which is not
 # obvious. Correcting a posting gives it a NEW Registreringsdato - the date of the
